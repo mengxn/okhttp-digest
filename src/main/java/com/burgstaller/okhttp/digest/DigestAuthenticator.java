@@ -118,7 +118,6 @@ public class DigestAuthenticator implements CachingAuthenticator {
         return new String(buffer);
     }
 
-
     protected void parseChallenge(
             final String buffer, int pos, int len, Map<String, String> params) {
 
@@ -149,14 +148,16 @@ public class DigestAuthenticator implements CachingAuthenticator {
             throw new IllegalArgumentException("missing nonce in challenge header: " + header);
         }
 
-        return authenticateWithState(response.request());
+        return authenticateWithState(route, response.request());
     }
 
     private String getHeaderName(int httpStatus) {
         if (httpStatus == 401) {
+            setProxy(false);
             return WWW_AUTH;
         }
         if (httpStatus == 407) {
+            setProxy(true);
             return PROXY_AUTH;
         }
         return "";
@@ -173,7 +174,7 @@ public class DigestAuthenticator implements CachingAuthenticator {
     }
 
     @Override
-    public Request authenticateWithState(Request request) throws IOException {
+    public Request authenticateWithState(Route route, Request request) throws IOException {
         final String realm = parameters.get("realm");
         if (realm == null) {
             // missing realm, this would mean that the authenticator is not initialized for this
@@ -192,11 +193,20 @@ public class DigestAuthenticator implements CachingAuthenticator {
             Platform.get().log(Platform.WARN, "previous digest authentication with same nonce failed, returning null", null);
             return null;
         }
+
         // Add method name and request-URI to the parameter map
-        final String method = request.method();
-        final String uri = RequestLine.requestPath(request.url());
-        getParameters().put("methodname", method);
-        getParameters().put("uri", uri);
+        if (!route.requiresTunnel()) {
+            final String method = request.method();
+            final String uri = RequestLine.requestPath(request.url());
+            getParameters().put("methodname", method);
+            getParameters().put("uri", uri);
+        } else {
+            final String method = "CONNECT";
+            final String uri = request.url().host() + ':' + request.url().port();
+            getParameters().put("methodname", method);
+            getParameters().put("uri", uri);
+        }
+
         final String charset = getParameter("charset");
         if (charset == null) {
             String credentialsCharset = getCredentialsCharset(request);
